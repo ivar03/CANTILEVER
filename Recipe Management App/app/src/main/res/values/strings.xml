@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">Recipe App</string>
+    <string name="add_recipe">Add Recipe</string>
+    <string name="edit_recipe">Edit Recipe</string>
+    <string name="recipe_title">Recipe Title</string>
+    <string name="ingredients">Ingredients</string>
+    <string name="instructions">Instructions</string>
+    <string name="category">Category</string>
+    <string name="save_recipe">Save Recipe</string>
+    <string name="delete_recipe">Delete Recipe</string>
+    <string name="favorites">Favorites</string>
+    <string name="search_recipes">Search recipes...</string>
+    <string name="select_image">Select Image</string>
+    <string name="rating">Rating</string>
+</resources>
