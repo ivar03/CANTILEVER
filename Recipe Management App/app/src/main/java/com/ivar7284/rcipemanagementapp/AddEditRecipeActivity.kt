@@ -118,6 +118,8 @@ class AddEditRecipeActivity : AppCompatActivity() {
                 if (!it.imagePath.isNullOrEmpty()) {
                     Glide.with(this@AddEditRecipeActivity)
                         .load(it.imagePath)
+                        .centerCrop()
+                        .placeholder(R.drawable.placeholder_food)
                         .into(imageView)
                 }
             }

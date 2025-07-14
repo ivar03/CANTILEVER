@@ -5,10 +5,12 @@ import android.content.Intent
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
+import android.widget.Button
 import android.widget.ImageView
 import android.widget.RatingBar
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
@@ -29,9 +31,22 @@ class RecipeDetailActivity : AppCompatActivity() {
     private lateinit var recipeImage: ImageView
     private lateinit var ratingBar: RatingBar
     private lateinit var favoriteButton: FloatingActionButton
-    
+    private lateinit var editButton: Button
+    private lateinit var deleteButton: Button
+
     private var recipe: Recipe? = null
-    
+    private var recipeId: Long = 0
+
+    // Activity result launcher for edit recipe
+    private val editRecipeLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            // Refresh the recipe data after editing
+            loadRecipeDetail()
+        }
+    }
+
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,13 +57,21 @@ class RecipeDetailActivity : AppCompatActivity() {
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom)
             insets
         }
-        
+
+        recipeId = intent.getLongExtra("recipe_id", 0)
+
         initViews()
         setupViewModel()
         loadRecipeDetail()
         setupClickListeners()
     }
-    
+
+    override fun onResume() {
+        super.onResume()
+        // Refresh data when returning to this activity
+        loadRecipeDetail()
+    }
+
     private fun initViews() {
         titleText = findViewById(R.id.titleText)
         categoryText = findViewById(R.id.categoryText)
@@ -57,15 +80,15 @@ class RecipeDetailActivity : AppCompatActivity() {
         recipeImage = findViewById(R.id.recipeImage)
         ratingBar = findViewById(R.id.ratingBar)
         favoriteButton = findViewById(R.id.favoriteButton)
+        editButton = findViewById(R.id.editButton)
+        deleteButton = findViewById(R.id.deleteButton)
     }
-    
+
     private fun setupViewModel() {
         viewModel = ViewModelProvider(this)[RecipeViewModel::class.java]
     }
-    
+
     private fun loadRecipeDetail() {
-        val recipeId = intent.getLongExtra("recipe_id", 0)
-        
         lifecycleScope.launch {
             recipe = viewModel.getRecipeById(recipeId)
             recipe?.let { displayRecipe(it) }
@@ -93,29 +116,6 @@ class RecipeDetailActivity : AppCompatActivity() {
                 .load(recipe.imagePath)
                 .centerCrop()
                 .placeholder(R.drawable.placeholder_food)
-                .error(R.drawable.placeholder_food)
-                .listener(object : com.bumptech.glide.request.RequestListener<android.graphics.drawable.Drawable> {
-                    override fun onLoadFailed(
-                        e: com.bumptech.glide.load.engine.GlideException?,
-                        model: Any?,
-                        target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?,
-                        isFirstResource: Boolean
-                    ): Boolean {
-                        android.util.Log.e("RecipeDetail", "Glide load failed for: $model", e)
-                        return false // Let Glide handle the error (show error drawable)
-                    }
-
-                    override fun onResourceReady(
-                        resource: android.graphics.drawable.Drawable?,
-                        model: Any?,
-                        target: com.bumptech.glide.request.target.Target<android.graphics.drawable.Drawable>?,
-                        dataSource: com.bumptech.glide.load.DataSource?,
-                        isFirstResource: Boolean
-                    ): Boolean {
-                        android.util.Log.d("RecipeDetail", "Glide load successful for: $model")
-                        return false // Let Glide handle the success
-                    }
-                })
                 .into(recipeImage)
         } else {
             android.util.Log.d("RecipeDetail", "No image path, using placeholder")
@@ -128,30 +128,53 @@ class RecipeDetailActivity : AppCompatActivity() {
             else R.drawable.ic_favorite_outline
         )
     }
-    
+
     private fun setupClickListeners() {
         favoriteButton.setOnClickListener {
-            recipe?.let { viewModel.toggleFavorite(it) }
-        }
-        
-        ratingBar.setOnRatingBarChangeListener { _, rating, fromUser ->
-            if (fromUser) {
-                recipe?.let { viewModel.updateRating(it, rating) }
+            recipe?.let {
+                viewModel.toggleFavorite(it)
+                // Update the UI immediately
+                val updatedRecipe = it.copy(isFavorite = !it.isFavorite)
+                recipe = updatedRecipe
+                displayRecipe(updatedRecipe)
             }
         }
+
+        ratingBar.setOnRatingBarChangeListener { _, rating, fromUser ->
+            if (fromUser) {
+                recipe?.let {
+                    viewModel.updateRating(it, rating)
+                    // Update the local recipe object
+                    recipe = it.copy(rating = rating)
+                }
+            }
+        }
+
+        editButton.setOnClickListener {
+            launchEditActivity()
+        }
+        deleteButton.setOnClickListener {
+            showDeleteConfirmation()
+        }
     }
-    
+
+    private fun launchEditActivity() {
+        val intent = Intent(this, AddEditRecipeActivity::class.java)
+        intent.putExtra("recipe_id", recipeId)
+        editRecipeLauncher.launch(intent)
+    }
+
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.detail_menu, menu)
         return true
     }
-    
+
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_edit -> {
                 val intent = Intent(this, AddEditRecipeActivity::class.java)
-                intent.putExtra("recipe_id", recipe?.id ?: 0)
-                startActivity(intent)
+                intent.putExtra("recipe_id", recipeId)
+                editRecipeLauncher.launch(intent)
                 true
             }
             R.id.action_delete -> {
@@ -161,13 +184,13 @@ class RecipeDetailActivity : AppCompatActivity() {
             else -> super.onOptionsItemSelected(item)
         }
     }
-    
+
     private fun showDeleteConfirmation() {
         AlertDialog.Builder(this)
             .setTitle("Delete Recipe")
             .setMessage("Are you sure you want to delete this recipe?")
             .setPositiveButton("Delete") { _, _ ->
-                recipe?.let { 
+                recipe?.let {
                     viewModel.deleteRecipe(it)
                     finish()
                 }
