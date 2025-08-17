@@ -6,11 +6,11 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
-import android.widget.SearchView
 import android.widget.Toast
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SearchView
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -24,6 +24,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var swipeRefreshLayout: SwipeRefreshLayout
     private lateinit var chipGroup: ChipGroup
+    private lateinit var searchView: SearchView
     private lateinit var newsAdapter: NewsAdapter
     private val viewModel: NewsViewModel by viewModels()
 
@@ -31,6 +32,8 @@ class MainActivity : AppCompatActivity() {
         "general", "business", "entertainment", "health",
         "science", "sports", "technology"
     )
+
+    private var isSearchMode = false
 
     @SuppressLint("MissingInflatedId")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,6 +49,7 @@ class MainActivity : AppCompatActivity() {
         setupViews()
         setupRecyclerView()
         setupChips()
+        setupSearchView()
         observeViewModel()
     }
 
@@ -53,9 +57,21 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById(R.id.recyclerView)
         swipeRefreshLayout = findViewById(R.id.swipeRefreshLayout)
         chipGroup = findViewById(R.id.chipGroup)
+        searchView = findViewById(R.id.searchView)
 
         swipeRefreshLayout.setOnRefreshListener {
-            viewModel.loadTopHeadlines()
+            if (isSearchMode) {
+                // If in search mode, perform the last search again
+                val currentQuery = searchView.query.toString()
+                if (currentQuery.isNotEmpty()) {
+                    viewModel.searchNews(currentQuery)
+                } else {
+                    viewModel.loadTopHeadlines()
+                    isSearchMode = false
+                }
+            } else {
+                viewModel.loadTopHeadlines()
+            }
         }
     }
 
@@ -77,7 +93,7 @@ class MainActivity : AppCompatActivity() {
         allChip.isCheckable = true
         allChip.isChecked = true
         allChip.setOnCheckedChangeListener { _, isChecked ->
-            if (isChecked) {
+            if (isChecked && !isSearchMode) {
                 viewModel.loadTopHeadlines()
             }
         }
@@ -86,14 +102,56 @@ class MainActivity : AppCompatActivity() {
         // Add category chips
         categories.forEach { category ->
             val chip = Chip(this)
-            chip.text = category.capitalize()
+            chip.text = category.replaceFirstChar { it.uppercase() }
             chip.isCheckable = true
             chip.setOnCheckedChangeListener { _, isChecked ->
-                if (isChecked) {
+                if (isChecked && !isSearchMode) {
                     viewModel.loadTopHeadlines(category)
                 }
             }
             chipGroup.addView(chip)
+        }
+    }
+
+    private fun setupSearchView() {
+        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
+            override fun onQueryTextSubmit(query: String?): Boolean {
+                query?.let { searchQuery ->
+                    if (searchQuery.isNotEmpty()) {
+                        isSearchMode = true
+                        viewModel.searchNews(searchQuery)
+                        // Clear chip selections when searching
+                        chipGroup.clearCheck()
+                        // Hide keyboard
+                        searchView.clearFocus()
+                    }
+                }
+                return true
+            }
+
+            override fun onQueryTextChange(newText: String?): Boolean {
+                // If search text is cleared, go back to top headlines
+                if (newText.isNullOrEmpty() && isSearchMode) {
+                    isSearchMode = false
+                    viewModel.loadTopHeadlines()
+                    // Restore "All" chip selection
+                    val allChip = chipGroup.getChildAt(0) as? Chip
+                    allChip?.isChecked = true
+                }
+                return true
+            }
+        })
+
+        // Handle search view close button
+        searchView.setOnCloseListener {
+            if (isSearchMode) {
+                isSearchMode = false
+                viewModel.loadTopHeadlines()
+                // Restore "All" chip selection
+                val allChip = chipGroup.getChildAt(0) as? Chip
+                allChip?.isChecked = true
+            }
+            false
         }
     }
 
@@ -118,28 +176,23 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
-
-        val searchItem = menu?.findItem(R.id.action_search)
-        val searchView = searchItem?.actionView as SearchView
-
-        searchView.setOnQueryTextListener(object : SearchView.OnQueryTextListener {
-            override fun onQueryTextSubmit(query: String?): Boolean {
-                query?.let { viewModel.searchNews(it) }
-                return true
-            }
-
-            override fun onQueryTextChange(newText: String?): Boolean {
-                return false
-            }
-        })
-
         return true
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
         return when (item.itemId) {
             R.id.action_refresh -> {
-                viewModel.loadTopHeadlines()
+                if (isSearchMode) {
+                    val currentQuery = searchView.query.toString()
+                    if (currentQuery.isNotEmpty()) {
+                        viewModel.searchNews(currentQuery)
+                    } else {
+                        viewModel.loadTopHeadlines()
+                        isSearchMode = false
+                    }
+                } else {
+                    viewModel.loadTopHeadlines()
+                }
                 true
             }
             else -> super.onOptionsItemSelected(item)
